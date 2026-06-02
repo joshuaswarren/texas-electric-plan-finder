@@ -1,0 +1,23 @@
+{
+  "custom": [
+    {
+      "id": "my-current-plan",
+      "provider": "Example REP",
+      "planName": "Example Fixed 12",
+      "tdu": "Example TDU",
+      "rateType": "Fixed",
+      "termMonths": 12,
+      "energyChargeCentsPerKwh": 7.5,
+      "deliveryFixedDollars": 4,
+      "deliveryChargeCentsPerKwh": 6,
+      "usageCredits": [
+        {
+          "thresholdKwh": 1000,
+          "amountDollars": 50
+        }
+      ],
+      "isBaseline": true,
+      "notes": "Replace every value with the current EFL before importing."
+    }
+  ]
+}

@@ -1,6 +1,5 @@
 import {
   AlertTriangle,
-  Download,
   FileJson,
   FileSpreadsheet,
   Filter,
@@ -13,21 +12,11 @@ import {
 } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import './App.css'
-import { exampleEflPlans } from './data/examplePlans'
 import { parseSmartMeterTexasCsv } from './lib/csv'
+import { hydratePlansWithEfl } from './lib/eflParser'
 import { evaluatePlan, mapCustomPlans, mapPowerToChoosePlans, parsePlanImport } from './lib/plans'
 import { summarizeUsage } from './lib/usage'
 import type { CustomEflPlan, EvaluatedPlan, PowerToChoosePlan, UsageInterval } from './lib/types'
-
-const sampleUsageCsv = `ESIID,USAGE_DATE,REVISION_DATE,USAGE_START_TIME,USAGE_END_TIME,USAGE_KWH,ESTIMATED_ACTUAL,CONSUMPTION_SURPLUSGENERATION
-'00000000000000000,01/01/2026,01/02/2026 07:00:00,00:00,00:15,0.82,A,Consumption
-'00000000000000000,01/01/2026,01/02/2026 07:00:00,00:15,00:30,0.79,A,Consumption
-'00000000000000000,01/01/2026,01/02/2026 07:00:00,16:00,16:15,1.44,A,Consumption
-'00000000000000000,01/01/2026,01/02/2026 07:00:00,16:15,16:30,1.51,A,Consumption
-'00000000000000000,02/01/2026,02/02/2026 07:00:00,00:00,00:15,0.64,A,Consumption
-'00000000000000000,02/01/2026,02/02/2026 07:00:00,16:00,16:15,1.08,A,Consumption
-'00000000000000000,03/01/2026,03/02/2026 07:00:00,00:00,00:15,0.55,A,Consumption
-'00000000000000000,03/01/2026,03/02/2026 07:00:00,16:00,16:15,0.92,A,Consumption`
 
 type Filters = {
   minTerm: number
@@ -62,17 +51,6 @@ function decimal(value: number, digits = 1): string {
   }).format(value)
 }
 
-function downloadJson(filename: string, payload: unknown) {
-  const url = URL.createObjectURL(
-    new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' }),
-  )
-  const link = document.createElement('a')
-  link.href = url
-  link.download = filename
-  link.click()
-  URL.revokeObjectURL(url)
-}
-
 function filterPlan(plan: EvaluatedPlan, filters: Filters): boolean {
   if (filters.fixedOnly && plan.rateType?.toLowerCase() !== 'fixed') return false
   if (!filters.allowTou && plan.timeOfUse) return false
@@ -99,12 +77,13 @@ function extractPowerToChoosePlans(payload: unknown): PowerToChoosePlan[] {
 function App() {
   const [usageIntervals, setUsageIntervals] = useState<UsageInterval[]>([])
   const [ptcPlans, setPtcPlans] = useState<PowerToChoosePlan[]>([])
-  const [customPlans, setCustomPlans] = useState<CustomEflPlan[]>(exampleEflPlans)
+  const [customPlans, setCustomPlans] = useState<CustomEflPlan[]>([])
   const [zipCode, setZipCode] = useState('')
   const [filters, setFilters] = useState<Filters>(defaultFilters)
   const [status, setStatus] = useState('Upload Smart Meter Texas interval data to start.')
   const [error, setError] = useState('')
   const [isFetching, setIsFetching] = useState(false)
+  const [eflProgress, setEflProgress] = useState<{ done: number; total: number }>()
 
   const usage = useMemo(
     () => (usageIntervals.length ? summarizeUsage(usageIntervals) : undefined),
@@ -127,8 +106,11 @@ function App() {
     try {
       const text = await file.text()
       const intervals = parseSmartMeterTexasCsv(text)
+      const summary = summarizeUsage(intervals)
       setUsageIntervals(intervals)
-      setStatus(`Loaded ${intervals.length.toLocaleString()} interval rows from ${file.name}.`)
+      setStatus(
+        `Loaded ${intervals.length.toLocaleString()} interval rows from ${file.name}; scoring ${summary.monthCount} complete month(s).`,
+      )
     } catch (exception) {
       setError(exception instanceof Error ? exception.message : 'Could not parse usage CSV.')
     }
@@ -139,7 +121,16 @@ function App() {
     try {
       const text = await file.text()
       const imported = parsePlanImport(text)
-      setPtcPlans(imported.ptc.length ? imported.ptc : ptcPlans)
+      if (imported.ptc.length) {
+        setPtcPlans(imported.ptc)
+        setEflProgress({ done: 0, total: imported.ptc.length })
+        const hydrated = await hydratePlansWithEfl(imported.ptc, (done, total) => {
+          setEflProgress({ done, total })
+          setStatus(`Parsing EFLs from imported plans: ${done}/${total}.`)
+        })
+        setPtcPlans(hydrated)
+        setEflProgress(undefined)
+      }
       setCustomPlans(imported.custom.length ? imported.custom : customPlans)
       setStatus(
         `Imported ${imported.ptc.length.toLocaleString()} PowerToChoose plan(s) and ${imported.custom.length.toLocaleString()} custom EFL plan(s).`,
@@ -169,7 +160,18 @@ function App() {
         throw new Error(payload.message || 'PowerToChoose did not return plan data.')
       }
       setPtcPlans(plans)
-      setStatus(`Fetched ${plans.length.toLocaleString()} PowerToChoose plans for ${zipCode}.`)
+      setStatus(`Fetched ${plans.length.toLocaleString()} PowerToChoose plans for ${zipCode}; parsing EFLs.`)
+      setEflProgress({ done: 0, total: plans.length })
+      const hydrated = await hydratePlansWithEfl(plans, (done, total) => {
+        setEflProgress({ done, total })
+        setStatus(`Parsing EFLs for ${zipCode}: ${done}/${total}.`)
+      })
+      setPtcPlans(hydrated)
+      setEflProgress(undefined)
+      const parsedCount = hydrated.filter((plan) => plan.efl_parse_status === 'parsed').length
+      setStatus(
+        `Fetched ${plans.length.toLocaleString()} PowerToChoose plans for ${zipCode}; parsed ${parsedCount.toLocaleString()} EFL(s).`,
+      )
     } catch (exception) {
       setError(
         `Plan fetch failed. Use the CLI fallback: npm run fetch:plans -- --zip ${zipCode}. ${
@@ -213,17 +215,6 @@ function App() {
                 }}
               />
             </label>
-            <button
-              type="button"
-              className="secondary-button"
-              onClick={() => {
-                const intervals = parseSmartMeterTexasCsv(sampleUsageCsv)
-                setUsageIntervals(intervals)
-                setStatus('Loaded a tiny anonymized sample usage file.')
-              }}
-            >
-              Load sample
-            </button>
           </section>
 
           <section className="panel">
@@ -250,7 +241,7 @@ function App() {
           <section className="panel">
             <div className="panel-title">
               <FileJson size={18} />
-              <h2>EFL plans</h2>
+              <h2>Plan import</h2>
             </div>
             <label className="file-drop compact">
               <Upload size={20} />
@@ -264,14 +255,7 @@ function App() {
                 }}
               />
             </label>
-            <button
-              type="button"
-              className="secondary-button"
-              onClick={() => downloadJson('example-efl-plans.json', { custom: customPlans })}
-            >
-              <Download size={16} />
-              Export examples
-            </button>
+            <p className="hint">Fetched PowerToChoose plans automatically pull and parse EFLs.</p>
           </section>
 
           <section className="panel filters">
@@ -347,19 +331,30 @@ function App() {
             {error}
           </div>
         )}
-        <div className="notice">{status}</div>
+        <div className="notice">
+          {status}
+          {eflProgress && ` (${eflProgress.done}/${eflProgress.total})`}
+        </div>
       </section>
 
       <section className="summary-grid">
         <article className="stat-tile">
           <span>Total usage</span>
           <strong>{usage ? `${decimal(usage.totalKwh, 0)} kWh` : '-'}</strong>
-          <small>{usage ? `${usage.firstDate} to ${usage.lastDate}` : 'Upload interval data'}</small>
+          <small>
+            {usage?.firstDate && usage.lastDate
+              ? `${usage.firstDate} to ${usage.lastDate}`
+              : 'Upload interval data'}
+          </small>
         </article>
         <article className="stat-tile">
-          <span>Monthly samples</span>
+          <span>Complete months</span>
           <strong>{usage?.monthCount ?? '-'}</strong>
-          <small>{usage ? `${usage.intervalCount.toLocaleString()} intervals` : '15-minute rows'}</small>
+          <small>
+            {usage
+              ? `${usage.excludedMonths.length} partial/extra month(s) omitted`
+              : 'Partial months are omitted'}
+          </small>
         </article>
         <article className="stat-tile">
           <span>Best annual estimate</span>

@@ -90,6 +90,9 @@ export function mapPowerToChoosePlans(plans: PowerToChoosePlan[]): CandidatePlan
     specialTerms: plan.special_terms,
     factSheetUrl: plan.fact_sheet,
     signUpUrl: plan.go_to_plan,
+    eflPlan: plan.parsed_efl,
+    eflParseStatus: plan.efl_parse_status,
+    eflParseNotes: plan.efl_parse_notes,
     raw: plan,
   }))
 }
@@ -121,6 +124,8 @@ export function evaluatePlan(plan: CandidatePlan, monthlyUsage: MonthlyUsage[]):
     cost:
       plan.source === 'efl'
         ? calculateEflMonthlyCost(plan.raw, month)
+        : plan.eflPlan
+          ? calculateEflMonthlyCost(plan.eflPlan, month)
         : ptcCurveCost(plan.raw, month.kwh),
   }))
   const annualCost = monthlyCosts.reduce((total, month) => total + month.cost, 0)
@@ -128,7 +133,11 @@ export function evaluatePlan(plan: CandidatePlan, monthlyUsage: MonthlyUsage[]):
   const warnings: string[] = []
 
   if (plan.source === 'ptc') {
-    warnings.push('Estimated from PowerToChoose 500/1000/2000 kWh averages, not full EFL rules.')
+    if (plan.eflPlan) {
+      warnings.push('Scored with parsed EFL charges. Verify the provider EFL before enrollment.')
+    } else {
+      warnings.push('EFL parser could not model this plan; scored from PowerToChoose 500/1000/2000 kWh averages.')
+    }
     if (monthlyUsage.some((month) => month.kwh > 2000)) {
       warnings.push('Usage exceeds the highest published PTC point; costs above 2,000 kWh are extrapolated.')
     }
@@ -146,7 +155,7 @@ export function evaluatePlan(plan: CandidatePlan, monthlyUsage: MonthlyUsage[]):
     annualCost,
     averageCentsPerKwh: totalKwh > 0 ? (annualCost / totalKwh) * 100 : 0,
     monthlyCosts,
-    estimateMethod: plan.source === 'efl' ? 'efl-rules' : 'ptc-average-curve',
+    estimateMethod: plan.source === 'efl' || (plan.source === 'ptc' && plan.eflPlan) ? 'efl-rules' : 'ptc-average-curve',
     warnings,
   }
 }

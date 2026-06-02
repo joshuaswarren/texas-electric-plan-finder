@@ -11,6 +11,7 @@ export type UsageInterval = {
 }
 
 export type UsageSummary = {
+  rawIntervalCount: number
   intervalCount: number
   estimatedCount: number
   totalKwh: number
@@ -18,6 +19,7 @@ export type UsageSummary = {
   firstDate?: string
   lastDate?: string
   monthly: MonthlyUsage[]
+  excludedMonths: ExcludedMonth[]
   buckets: UsageBucket[]
 }
 
@@ -25,6 +27,12 @@ export type MonthlyUsage = {
   month: string
   kwh: number
   intervals: UsageInterval[]
+}
+
+export type ExcludedMonth = {
+  month: string
+  kwh: number
+  reason: 'partial-month' | 'outside-latest-12'
 }
 
 export type UsageBucket = {
@@ -56,6 +64,9 @@ export type PowerToChoosePlan = {
   fact_sheet?: string
   terms_of_service?: string
   go_to_plan?: string
+  parsed_efl?: CustomEflPlan
+  efl_parse_status?: 'pending' | 'parsed' | 'unsupported' | 'failed'
+  efl_parse_notes?: string[]
 }
 
 export type UsageCredit = {
@@ -114,6 +125,9 @@ export type CandidatePlan =
       specialTerms?: string
       factSheetUrl?: string
       signUpUrl?: string
+      eflPlan?: CustomEflPlan
+      eflParseStatus?: PowerToChoosePlan['efl_parse_status']
+      eflParseNotes?: string[]
       raw: PowerToChoosePlan
     }
   | {

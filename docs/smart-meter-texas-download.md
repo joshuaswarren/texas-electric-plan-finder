@@ -9,6 +9,8 @@ This project intentionally does not require Smart Meter Texas API access. Most u
 5. Export/download the CSV.
 6. Upload that CSV in the app.
 
+The app only scores complete calendar months. Partial first or last months are omitted so a one-day export edge does not look like a low-usage billing month.
+
 The app expects the standard Smart Meter Texas interval columns:
 
 ```text

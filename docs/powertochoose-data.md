@@ -20,7 +20,7 @@ The hosted app calls:
 https://texas-electric-plan-finder-ptc.joshua-s-warren.workers.dev/api/PowerToChoose/plans?zip_code=75001
 ```
 
-PowerToChoose rows are scored from the published 500, 1,000, and 2,000 kWh average prices. That is useful for broad discovery, but it is not a substitute for reading the Electricity Facts Label when a plan has:
+PowerToChoose rows include an EFL URL. The app fetches those EFLs through the Worker and attempts to parse the real recurring charge rules. Rows are scored from the published 500, 1,000, and 2,000 kWh average prices only when the provider EFL cannot be parsed. The fallback is useful for broad discovery, but it is not a substitute for reading the Electricity Facts Label when a plan has:
 
 - usage credits or minimum-usage rules
 - free nights/free weekends or other time-of-use rates
