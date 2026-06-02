@@ -138,6 +138,9 @@ export function evaluatePlan(plan: CandidatePlan, monthlyUsage: MonthlyUsage[]):
     } else {
       warnings.push('EFL parser could not model this plan; scored from PowerToChoose 500/1000/2000 kWh averages.')
     }
+    if (plan.eflParseNotes?.length) {
+      warnings.push(...plan.eflParseNotes)
+    }
     if (monthlyUsage.some((month) => month.kwh > 2000)) {
       warnings.push('Usage exceeds the highest published PTC point; costs above 2,000 kWh are extrapolated.')
     }
