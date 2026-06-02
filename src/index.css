@@ -1,0 +1,29 @@
+:root {
+  --paper: #f5efe0;
+  --ink: #1a2f2d;
+  --muted: #69736c;
+  --line: #d8ceb8;
+  --line-strong: #9f8f72;
+  --accent: #c8522f;
+  --accent-2: #0f7f8c;
+  --display: Georgia, 'Times New Roman', serif;
+  --body: 'Trebuchet MS', Verdana, sans-serif;
+  --mono: 'SFMono-Regular', Consolas, monospace;
+
+  font-family: var(--body);
+  line-height: 1.45;
+  color: var(--ink);
+  background: var(--paper);
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+}

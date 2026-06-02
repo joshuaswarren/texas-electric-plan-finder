@@ -1,0 +1,64 @@
+{
+  "custom": [
+    {
+      "id": "gexa-eco-choice-12-oncor-2025",
+      "provider": "Gexa Energy",
+      "planName": "Gexa Eco Choice 12",
+      "tdu": "Oncor Electric",
+      "rateType": "Fixed",
+      "termMonths": 12,
+      "advertisedCentsPerKwh": {
+        "kwh500": 14.1,
+        "kwh1000": 13.6,
+        "kwh2000": 13.4
+      },
+      "energyChargeCentsPerKwh": 8.1,
+      "deliveryFixedDollars": 4.23,
+      "deliveryChargeCentsPerKwh": 5.1248,
+      "cancellationFee": "$150 early termination fee",
+      "isBaseline": true
+    },
+    {
+      "id": "gexa-prime-saver-plus-24-oncor-2026",
+      "provider": "Gexa Energy",
+      "planName": "Gexa Prime Saver Plus 24",
+      "tdu": "Oncor Electric",
+      "rateType": "Fixed",
+      "termMonths": 24,
+      "advertisedCentsPerKwh": {
+        "kwh500": 18.5,
+        "kwh1000": 18.1,
+        "kwh2000": 11.6
+      },
+      "energyChargeCentsPerKwh": 11.56,
+      "deliveryFixedDollars": 4.06,
+      "deliveryChargeCentsPerKwh": 6.1196,
+      "usageCredits": [
+        {
+          "thresholdKwh": 2000,
+          "amountDollars": 125
+        }
+      ],
+      "cancellationFee": "$295 early termination fee"
+    },
+    {
+      "id": "budget-power-no-gimmicks-12-oncor-2026",
+      "provider": "Budget Power",
+      "planName": "No Gimmicks 12 - Oncor",
+      "tdu": "Oncor",
+      "rateType": "Fixed",
+      "termMonths": 12,
+      "advertisedCentsPerKwh": {
+        "kwh500": 13.1,
+        "kwh1000": 12.7,
+        "kwh2000": 12.5
+      },
+      "baseChargeDollars": 0,
+      "energyChargeCentsPerKwh": 6.212,
+      "deliveryFixedDollars": 4.06,
+      "deliveryChargeCentsPerKwh": 6.1196,
+      "cancellationFee": "$100 early termination fee",
+      "renewable": "35.2% renewable"
+    }
+  ]
+}

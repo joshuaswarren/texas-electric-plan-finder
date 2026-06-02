@@ -1,0 +1,143 @@
+export type UsageInterval = {
+  esiId?: string
+  date: string
+  month: string
+  weekday: number
+  startMinutes: number
+  endMinutes: number
+  kwh: number
+  estimated: boolean
+  flow: string
+}
+
+export type UsageSummary = {
+  intervalCount: number
+  estimatedCount: number
+  totalKwh: number
+  monthCount: number
+  firstDate?: string
+  lastDate?: string
+  monthly: MonthlyUsage[]
+  buckets: UsageBucket[]
+}
+
+export type MonthlyUsage = {
+  month: string
+  kwh: number
+  intervals: UsageInterval[]
+}
+
+export type UsageBucket = {
+  key: string
+  label: string
+  kwh: number
+  share: number
+}
+
+export type PowerToChoosePlan = {
+  plan_id?: number
+  company_name: string
+  company_tdu_name?: string
+  plan_name: string
+  rate_type?: string
+  term_value?: number
+  price_kwh500?: number
+  price_kwh1000?: number
+  price_kwh2000?: number
+  timeofuse?: boolean
+  prepaid?: boolean
+  minimum_usage?: boolean
+  renewable_energy_description?: string
+  rating_total?: number
+  rating_count?: number
+  new_customer?: boolean
+  pricing_details?: string
+  special_terms?: string
+  fact_sheet?: string
+  terms_of_service?: string
+  go_to_plan?: string
+}
+
+export type UsageCredit = {
+  thresholdKwh: number
+  amountDollars: number
+}
+
+export type TouPeriod = {
+  label: string
+  energyChargeCentsPerKwh: number
+  start: string
+  end: string
+  days: 'all' | 'weekdays' | 'weekends'
+}
+
+export type CustomEflPlan = {
+  id: string
+  provider: string
+  planName: string
+  tdu?: string
+  sourceLabel?: string
+  rateType: string
+  termMonths?: number
+  advertisedCentsPerKwh?: {
+    kwh500?: number
+    kwh1000?: number
+    kwh2000?: number
+  }
+  baseChargeDollars?: number
+  energyChargeCentsPerKwh?: number
+  deliveryFixedDollars?: number
+  deliveryChargeCentsPerKwh?: number
+  usageCredits?: UsageCredit[]
+  touPeriods?: TouPeriod[]
+  cancellationFee?: string
+  renewable?: string
+  isBaseline?: boolean
+  notes?: string
+}
+
+export type CandidatePlan =
+  | {
+      source: 'ptc'
+      id: string
+      provider: string
+      planName: string
+      rateType?: string
+      termMonths?: number
+      tdu?: string
+      timeOfUse: boolean
+      prepaid: boolean
+      minimumUsage: boolean
+      renewable?: string
+      rating?: number
+      pricingDetails?: string
+      specialTerms?: string
+      factSheetUrl?: string
+      signUpUrl?: string
+      raw: PowerToChoosePlan
+    }
+  | {
+      source: 'efl'
+      id: string
+      provider: string
+      planName: string
+      rateType?: string
+      termMonths?: number
+      tdu?: string
+      timeOfUse: boolean
+      prepaid: boolean
+      minimumUsage: boolean
+      renewable?: string
+      pricingDetails?: string
+      specialTerms?: string
+      isBaseline?: boolean
+      raw: CustomEflPlan
+    }
+
+export type EvaluatedPlan = CandidatePlan & {
+  annualCost: number
+  averageCentsPerKwh: number
+  monthlyCosts: { month: string; kwh: number; cost: number }[]
+  estimateMethod: 'efl-rules' | 'ptc-average-curve'
+  warnings: string[]
+}
