@@ -15,6 +15,8 @@ Keywords: Texas electricity plan calculator, PowerToChoose comparison, Smart Met
 
 ## Quick Start
 
+Hosted app: [joshuaswarren.github.io/texas-electric-plan-finder](https://joshuaswarren.github.io/texas-electric-plan-finder/)
+
 ```sh
 npm install
 npm run dev
