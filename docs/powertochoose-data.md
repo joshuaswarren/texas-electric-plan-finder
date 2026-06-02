@@ -6,10 +6,18 @@ PowerToChoose is the Public Utility Commission of Texas electricity shopping sit
 npm run fetch:plans -- --zip 75001 --out plans-75001.json
 ```
 
-The app can also fetch plans directly from:
+The local development app proxies PowerToChoose through Vite. The hosted GitHub Pages app uses a Cloudflare Worker proxy because PowerToChoose does not send browser CORS headers for arbitrary static-site origins.
+
+The upstream URL is:
 
 ```text
 https://api.powertochoose.org/api/PowerToChoose/plans?zip_code=75001
+```
+
+The hosted app calls:
+
+```text
+https://texas-electric-plan-finder-ptc.joshua-s-warren.workers.dev/api/PowerToChoose/plans?zip_code=75001
 ```
 
 PowerToChoose rows are scored from the published 500, 1,000, and 2,000 kWh average prices. That is useful for broad discovery, but it is not a substitute for reading the Electricity Facts Label when a plan has:

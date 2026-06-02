@@ -26,13 +26,21 @@ Open the local URL printed by Vite.
 
 ## Fetch PowerToChoose Plans
 
-The browser can try the PowerToChoose API directly. If CORS or network policy blocks it, use the CLI fallback:
+The hosted app uses a small Cloudflare Worker proxy because PowerToChoose does not allow direct browser CORS requests from GitHub Pages. Local development uses Vite's `/ptc-api` proxy.
+
+If network policy blocks either browser path, use the CLI fallback:
 
 ```sh
 npm run fetch:plans -- --zip 75001 --out plans-75001.json
 ```
 
 Then import the JSON in the app.
+
+Deploy the public proxy after changes with:
+
+```sh
+npm run deploy:worker
+```
 
 ## Download Smart Meter Texas Usage
 

@@ -83,6 +83,19 @@ function filterPlan(plan: EvaluatedPlan, filters: Filters): boolean {
   return true
 }
 
+function extractPowerToChoosePlans(payload: unknown): PowerToChoosePlan[] {
+  if (
+    payload &&
+    typeof payload === 'object' &&
+    'data' in payload &&
+    Array.isArray((payload as { data: unknown }).data)
+  ) {
+    return (payload as { data: PowerToChoosePlan[] }).data
+  }
+
+  return []
+}
+
 function App() {
   const [usageIntervals, setUsageIntervals] = useState<UsageInterval[]>([])
   const [ptcPlans, setPtcPlans] = useState<PowerToChoosePlan[]>([])
@@ -145,19 +158,21 @@ function App() {
     setError('')
     setIsFetching(true)
     try {
-      const ptcBase = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
-        ? '/ptc-api'
-        : 'https://api.powertochoose.org'
+      const ptcBase =
+        window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
+          ? '/ptc-api'
+          : 'https://texas-electric-plan-finder-ptc.joshua-s-warren.workers.dev'
       const response = await fetch(`${ptcBase}/api/PowerToChoose/plans?zip_code=${zipCode}`)
       const payload = await response.json()
-      if (!payload.success || !Array.isArray(payload.data)) {
+      const plans = extractPowerToChoosePlans(payload)
+      if (!plans.length) {
         throw new Error(payload.message || 'PowerToChoose did not return plan data.')
       }
-      setPtcPlans(payload.data)
-      setStatus(`Fetched ${payload.data.length.toLocaleString()} PowerToChoose plans for ${zipCode}.`)
+      setPtcPlans(plans)
+      setStatus(`Fetched ${plans.length.toLocaleString()} PowerToChoose plans for ${zipCode}.`)
     } catch (exception) {
       setError(
-        `Browser fetch failed. Use the CLI fallback: npm run fetch:plans -- --zip ${zipCode}. ${
+        `Plan fetch failed. Use the CLI fallback: npm run fetch:plans -- --zip ${zipCode}. ${
           exception instanceof Error ? exception.message : ''
         }`,
       )

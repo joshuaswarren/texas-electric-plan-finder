@@ -12,8 +12,10 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
+    "deploy:worker": "wrangler deploy --config worker/wrangler.jsonc",
     "fetch:plans": "node scripts/fetch-power-to-choose.mjs",
     "lint": "eslint .",
+    "worker:check": "wrangler deploy --config worker/wrangler.jsonc --dry-run",
     "preview": "vite preview"
   },
   "dependencies": {
@@ -33,6 +35,7 @@
     "globals": "^17.6.0",
     "typescript": "~6.0.2",
     "typescript-eslint": "^8.59.2",
-    "vite": "^8.0.12"
+    "vite": "^8.0.12",
+    "wrangler": "^4.96.0"
   }
 }
