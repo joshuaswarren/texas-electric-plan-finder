@@ -126,6 +126,7 @@ h2 {
 
 .file-drop.compact {
   min-height: 52px;
+  margin-top: 10px;
 }
 
 .file-drop input {
@@ -159,6 +160,17 @@ button,
   margin-top: 10px;
   background: #fffdf7;
   color: var(--ink);
+}
+
+.button-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.button-row .secondary-button {
+  min-width: 0;
+  padding: 0 8px;
 }
 
 .zip-row {

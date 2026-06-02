@@ -1,6 +1,6 @@
 import * as pdfjsLib from 'pdfjs-dist'
 import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.mjs?url'
-import type { CustomEflPlan, PowerToChoosePlan, TouPeriod, UsageCredit } from './types'
+import type { CustomEflPlan, EvChargingPlan, PowerToChoosePlan, TouPeriod, UsageCredit } from './types'
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerUrl
 
@@ -216,6 +216,56 @@ function parseClockTime(hourText: string, ampmText: string): string {
   return `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`
 }
 
+function extractEligibleVehicleChargingPlan(text: string): EvChargingPlan | undefined {
+  if (!/eligible\s+vehicle\s+charging|home\s+charging\s+fee|unlimited\s+vehicle\s+charging/i.test(text)) {
+    return undefined
+  }
+
+  const monthlyFeeDollarsPerVehicle = firstNumber(
+    [
+      /home\s+charging\s+fee\s*:?\s*\$\s*(\d+(?:\.\d{1,2})?)\s*(?:\/|per)\s*month\s*(?:\/|per)\s*tesla\s+ev/i,
+      /home\s+charging\s+fee\s*:?\s*\$\s*(\d+(?:\.\d{1,2})?)\s*(?:\/|per)\s*month/i,
+    ],
+    text,
+  )
+  if (monthlyFeeDollarsPerVehicle === undefined) {
+    return undefined
+  }
+
+  const windowMatch = text.match(
+    /eligible\s+hours\s+for\s+unlimited\s+vehicle\s+charging\s*:?\s*(\d{1,2}(?::\d{2})?)\s*(?:am|a\.m\.)\s*(?:\([^)]*\))?\s*[-–]\s*(\d{1,2}(?::\d{2})?)\s*(?:pm|p\.m\.)/i,
+  )
+  const eligiblePeriods = windowMatch
+    ? [
+        {
+          label: 'Eligible Tesla vehicle charging',
+          start: parseClockTime(windowMatch[1], 'am'),
+          end: parseClockTime(windowMatch[2], 'pm'),
+          days: 'all' as const,
+        },
+      ]
+    : [
+        {
+          label: 'Eligible Tesla vehicle charging',
+          start: '00:00',
+          end: '12:00',
+          days: 'all' as const,
+        },
+      ]
+
+  const assumedMonthlyKwh = firstNumber(
+    [/assumes\s+one\s+\(?1\)?\s+eligible\s+vehicle\s+that\s+consumes\s+(\d+(?:\.\d{1,2})?)\s*kwh\s+per\s+month/i],
+    text,
+  )
+
+  return {
+    monthlyFeeDollarsPerVehicle,
+    eligiblePeriods,
+    assumedMonthlyKwh,
+    requiredDevice: 'Tesla EV',
+  }
+}
+
 function findLabeledRate(text: string, labels: string[]): number | undefined {
   for (const label of labels) {
     const escaped = label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
@@ -378,6 +428,7 @@ function parseEflText(plan: PowerToChoosePlan, text: string): { plan?: CustomEfl
   const deliveryFixedDollars = directDeliveryFixedDollars ?? fallbackTduCharges?.fixedDollars
   const deliveryChargeCentsPerKwh = directDeliveryChargeCentsPerKwh ?? fallbackTduCharges?.centsPerKwh
   const touPeriods = extractTouPeriods(normalized)
+  const evCharging = extractEligibleVehicleChargingPlan(normalized)
   const effectiveEnergyChargeCentsPerKwh =
     energyChargeCentsPerKwh ?? (touPeriods.length ? Math.max(...touPeriods.map((period) => period.energyChargeCentsPerKwh)) : undefined)
   const usageCredits = extractUsageCredits(normalized)
@@ -434,6 +485,7 @@ function parseEflText(plan: PowerToChoosePlan, text: string): { plan?: CustomEfl
       deliveryChargeCentsPerKwh,
       usageCredits,
       touPeriods: touPeriods.length ? touPeriods : undefined,
+      evCharging,
       cancellationFee: plan.pricing_details,
       renewable: plan.renewable_energy_description,
       notes: plan.special_terms,

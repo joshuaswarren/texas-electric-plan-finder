@@ -82,6 +82,28 @@ export type TouPeriod = {
   days: 'all' | 'weekdays' | 'weekends'
 }
 
+export type EvChargingMonthly = {
+  month: string
+  kwh: number
+  eligibleKwh: number
+}
+
+export type EvChargingProfile = {
+  source: 'manual' | 'tesla-wall-connector' | 'tesla-vehicle' | 'tesla-charge-stats' | 'interval-estimate' | 'assumption'
+  vehicleCount: number
+  monthly: EvChargingMonthly[]
+  totalKwh: number
+  eligibleKwh: number
+  notes: string[]
+}
+
+export type EvChargingPlan = {
+  monthlyFeeDollarsPerVehicle: number
+  eligiblePeriods: Omit<TouPeriod, 'energyChargeCentsPerKwh'>[]
+  assumedMonthlyKwh?: number
+  requiredDevice?: string
+}
+
 export type CustomEflPlan = {
   id: string
   provider: string
@@ -101,6 +123,7 @@ export type CustomEflPlan = {
   deliveryChargeCentsPerKwh?: number
   usageCredits?: UsageCredit[]
   touPeriods?: TouPeriod[]
+  evCharging?: EvChargingPlan
   cancellationFee?: string
   renewable?: string
   isBaseline?: boolean
@@ -151,7 +174,7 @@ export type CandidatePlan =
 export type EvaluatedPlan = CandidatePlan & {
   annualCost: number
   averageCentsPerKwh: number
-  monthlyCosts: { month: string; kwh: number; cost: number }[]
+  monthlyCosts: { month: string; kwh: number; cost: number; eligibleEvKwh: number }[]
   estimateMethod: 'efl-rules' | 'ptc-average-curve'
   warnings: string[]
 }

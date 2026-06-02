@@ -1,5 +1,7 @@
 import {
   AlertTriangle,
+  BatteryCharging,
+  Car,
   FileJson,
   FileSpreadsheet,
   Filter,
@@ -14,9 +16,15 @@ import { useMemo, useState } from 'react'
 import './App.css'
 import { parseSmartMeterTexasCsv } from './lib/csv'
 import { hydratePlansWithEfl } from './lib/eflParser'
+import {
+  createMonthlyEvAssumption,
+  estimateEvChargingFromIntervals,
+  parseEvChargingCsv,
+  parseTeslaChargeHistory,
+} from './lib/evCharging'
 import { evaluatePlan, mapCustomPlans, mapPowerToChoosePlans, parsePlanImport } from './lib/plans'
 import { summarizeUsage } from './lib/usage'
-import type { CustomEflPlan, EvaluatedPlan, PowerToChoosePlan, UsageInterval } from './lib/types'
+import type { CustomEflPlan, EvaluatedPlan, EvChargingProfile, PowerToChoosePlan, UsageInterval } from './lib/types'
 
 type Filters = {
   minTerm: number
@@ -51,6 +59,13 @@ function decimal(value: number, digits = 1): string {
   }).format(value)
 }
 
+function percent(value: number): string {
+  return new Intl.NumberFormat('en-US', {
+    maximumFractionDigits: 1,
+    minimumFractionDigits: 1,
+  }).format(value * 100)
+}
+
 function filterPlan(plan: EvaluatedPlan, filters: Filters): boolean {
   if (filters.fixedOnly && plan.rateType?.toLowerCase() !== 'fixed') return false
   if (!filters.allowTou && plan.timeOfUse) return false
@@ -74,15 +89,24 @@ function extractPowerToChoosePlans(payload: unknown): PowerToChoosePlan[] {
   return []
 }
 
+function apiBase(): string {
+  return 'https://texas-electric-plan-finder-ptc.joshua-s-warren.workers.dev'
+}
+
 function App() {
   const [usageIntervals, setUsageIntervals] = useState<UsageInterval[]>([])
   const [ptcPlans, setPtcPlans] = useState<PowerToChoosePlan[]>([])
   const [customPlans, setCustomPlans] = useState<CustomEflPlan[]>([])
+  const [evProfile, setEvProfile] = useState<EvChargingProfile>()
+  const [evAnnualKwh, setEvAnnualKwh] = useState(3097.92)
+  const [evVehicleCount, setEvVehicleCount] = useState(1)
+  const [evAllEligible, setEvAllEligible] = useState(true)
   const [zipCode, setZipCode] = useState('')
   const [filters, setFilters] = useState<Filters>(defaultFilters)
   const [status, setStatus] = useState('Upload Smart Meter Texas interval data to start.')
   const [error, setError] = useState('')
   const [isFetching, setIsFetching] = useState(false)
+  const [isFetchingTesla, setIsFetchingTesla] = useState(false)
   const [eflProgress, setEflProgress] = useState<{ done: number; total: number }>()
 
   const usage = useMemo(
@@ -93,10 +117,10 @@ function App() {
   const evaluatedPlans = useMemo(() => {
     if (!usage) return []
     return [...mapCustomPlans(customPlans), ...mapPowerToChoosePlans(ptcPlans)]
-      .map((plan) => evaluatePlan(plan, usage.monthly))
+      .map((plan) => evaluatePlan(plan, usage.monthly, evProfile))
       .filter((plan) => filterPlan(plan, filters))
       .sort((a, b) => a.annualCost - b.annualCost)
-  }, [customPlans, filters, ptcPlans, usage])
+  }, [customPlans, evProfile, filters, ptcPlans, usage])
 
   const baseline = evaluatedPlans.find((plan) => plan.source === 'efl' && plan.isBaseline)
   const bestPlan = evaluatedPlans[0]
@@ -140,6 +164,111 @@ function App() {
     }
   }
 
+  async function loadEvChargingFile(file: File) {
+    if (!usage) {
+      setError('Upload Smart Meter Texas interval usage before importing EV charging data.')
+      return
+    }
+
+    setError('')
+    try {
+      const text = await file.text()
+      const profile = parseEvChargingCsv(
+        text,
+        usage.monthly.map((month) => month.month),
+        [{ label: 'Eligible Tesla vehicle charging', start: '00:00', end: '12:00', days: 'all' }],
+        evVehicleCount,
+      )
+      setEvProfile(profile)
+      setStatus(
+        `Imported ${decimal(profile.totalKwh, 1)} Tesla charging kWh from ${file.name}; ${decimal(profile.eligibleKwh, 1)} kWh eligible.`,
+      )
+    } catch (exception) {
+      setError(exception instanceof Error ? exception.message : 'Could not parse EV charging CSV.')
+    }
+  }
+
+  function applyEvAssumption() {
+    if (!usage) {
+      setError('Upload Smart Meter Texas interval usage before applying an EV charging assumption.')
+      return
+    }
+
+    const profile = createMonthlyEvAssumption(
+      usage.monthly.map((month) => month.month),
+      evAnnualKwh / Math.max(1, usage.monthly.length),
+      evVehicleCount,
+      evAllEligible,
+    )
+    setEvProfile(profile)
+    setStatus(
+      `Applied Tesla charging assumption: ${decimal(profile.totalKwh, 1)} kWh/year, ${decimal(profile.eligibleKwh, 1)} eligible kWh.`,
+    )
+  }
+
+  function applyIntervalEstimate() {
+    if (!usage) {
+      setError('Upload Smart Meter Texas interval usage before estimating EV charging.')
+      return
+    }
+
+    const profile = estimateEvChargingFromIntervals(usage, evVehicleCount)
+    setEvProfile(profile)
+    setStatus(
+      `Estimated ${decimal(profile.totalKwh, 1)} Tesla charging kWh from interval shape; ${decimal(profile.eligibleKwh, 1)} kWh eligible.`,
+    )
+  }
+
+  async function connectTesla() {
+    setError('')
+    try {
+      const response = await fetch(`${apiBase()}/tesla/status`, { credentials: 'include' })
+      const payload = await response.json()
+      if (!payload.configured) {
+        throw new Error('Tesla OAuth is not configured on the public Worker yet. Use manual EV import, EV kWh assumption, or interval estimate.')
+      }
+      window.location.href = `${apiBase()}/tesla/oauth/start?return_url=${encodeURIComponent(window.location.href)}`
+    } catch (exception) {
+      setError(exception instanceof Error ? exception.message : 'Tesla OAuth is not available yet.')
+    }
+  }
+
+  async function fetchTeslaWallConnectorHistory() {
+    if (!usage) {
+      setError('Upload Smart Meter Texas interval usage before pulling Tesla charging history.')
+      return
+    }
+
+    setError('')
+    setIsFetchingTesla(true)
+    try {
+      const firstMonth = usage.monthly[0].month
+      const lastMonth = usage.monthly[usage.monthly.length - 1].month
+      const response = await fetch(
+        `${apiBase()}/tesla/wall-connector-charge-history?start_date=${firstMonth}-01&end_date=${lastMonth}-31&time_zone=America/Chicago`,
+        { credentials: 'include' },
+      )
+      const payload = await response.json()
+      if (!response.ok) {
+        throw new Error(payload.message || 'Tesla Wall Connector history was not available.')
+      }
+      const profile = parseTeslaChargeHistory(
+        payload,
+        usage.monthly.map((month) => month.month),
+        [{ label: 'Eligible Tesla vehicle charging', start: '00:00', end: '12:00', days: 'all' }],
+        evVehicleCount,
+      )
+      setEvProfile(profile)
+      setStatus(
+        `Loaded Tesla Wall Connector history: ${decimal(profile.totalKwh, 1)} kWh, ${decimal(profile.eligibleKwh, 1)} eligible kWh.`,
+      )
+    } catch (exception) {
+      setError(exception instanceof Error ? exception.message : 'Could not load Tesla Wall Connector history.')
+    } finally {
+      setIsFetchingTesla(false)
+    }
+  }
+
   async function fetchPowerToChoosePlans() {
     if (!/^\d{5}$/.test(zipCode)) {
       setError('Enter a 5-digit Texas ZIP code first.')
@@ -149,11 +278,7 @@ function App() {
     setError('')
     setIsFetching(true)
     try {
-      const ptcBase =
-        window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
-          ? '/ptc-api'
-          : 'https://texas-electric-plan-finder-ptc.joshua-s-warren.workers.dev'
-      const response = await fetch(`${ptcBase}/api/PowerToChoose/plans?zip_code=${zipCode}`)
+      const response = await fetch(`${apiBase()}/api/PowerToChoose/plans?zip_code=${zipCode}`)
       const payload = await response.json()
       const plans = extractPowerToChoosePlans(payload)
       if (!plans.length) {
@@ -256,6 +381,76 @@ function App() {
               />
             </label>
             <p className="hint">Fetched PowerToChoose plans automatically pull and parse EFLs.</p>
+          </section>
+
+          <section className="panel ev-panel">
+            <div className="panel-title">
+              <Car size={18} />
+              <h2>Tesla EV</h2>
+            </div>
+            <div className="range-row">
+              <label>
+                Annual kWh
+                <input
+                  type="number"
+                  min={0}
+                  step={0.01}
+                  value={evAnnualKwh}
+                  onChange={(event) => setEvAnnualKwh(Number(event.target.value))}
+                />
+              </label>
+              <label>
+                Vehicles
+                <input
+                  type="number"
+                  min={1}
+                  max={10}
+                  value={evVehicleCount}
+                  onChange={(event) => setEvVehicleCount(Math.max(1, Number(event.target.value)))}
+                />
+              </label>
+            </div>
+            <label className="check-row">
+              <input
+                type="checkbox"
+                checked={evAllEligible}
+                onChange={(event) => setEvAllEligible(event.target.checked)}
+              />
+              Charging is midnight-noon
+            </label>
+            <button type="button" className="secondary-button" onClick={applyEvAssumption}>
+              <BatteryCharging size={18} />
+              Apply EV kWh
+            </button>
+            <label className="file-drop compact">
+              <Upload size={18} />
+              <span>Import EV CSV</span>
+              <input
+                type="file"
+                accept=".csv,text/csv"
+                onChange={(event) => {
+                  const file = event.target.files?.[0]
+                  if (file) void loadEvChargingFile(file)
+                }}
+              />
+            </label>
+            <button type="button" className="secondary-button" onClick={applyIntervalEstimate}>
+              Estimate from intervals
+            </button>
+            <div className="button-row">
+              <button type="button" className="secondary-button" onClick={() => void connectTesla()}>
+                Connect Tesla
+              </button>
+              <button type="button" className="secondary-button" onClick={() => void fetchTeslaWallConnectorHistory()}>
+                {isFetchingTesla ? <LoaderCircle className="spin" size={18} /> : <BatteryCharging size={18} />}
+                Pull
+              </button>
+            </div>
+            <p className="hint">
+              {evProfile
+                ? `${decimal(evProfile.eligibleKwh, 1)} eligible kWh loaded from ${evProfile.source}.`
+                : 'Only identified Tesla charging kWh is discounted.'}
+            </p>
           </section>
 
           <section className="panel filters">
@@ -367,6 +562,15 @@ function App() {
             {bestPlan && baseline ? money(bestPlan.annualCost - baseline.annualCost) : '-'}
           </strong>
           <small>{baseline ? `vs. ${baseline.planName}` : 'Mark a custom plan as baseline'}</small>
+        </article>
+        <article className="stat-tile">
+          <span>Eligible EV kWh</span>
+          <strong>{evProfile ? decimal(evProfile.eligibleKwh, 0) : '-'}</strong>
+          <small>
+            {evProfile
+              ? `${percent(evProfile.totalKwh > 0 ? evProfile.eligibleKwh / evProfile.totalKwh : 0)}% of EV kWh`
+              : 'Import, connect, estimate, or apply an assumption'}
+          </small>
         </article>
       </section>
 

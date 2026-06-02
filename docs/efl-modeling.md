@@ -32,6 +32,7 @@ Supported fields:
 - `deliveryChargeCentsPerKwh`
 - `usageCredits`
 - `touPeriods`
+- `evCharging`
 - `termMonths`
 - `cancellationFee`
 - `renewable`
@@ -58,3 +59,40 @@ For a time-of-use plan, use `touPeriods`:
   ]
 }
 ```
+
+## EV-Only Charging Discounts
+
+Some plans, including Tesla Drive-style EFLs, exclude eligible vehicle charging from the per-kWh energy and TDU delivery charges while adding a monthly vehicle fee. Model those plans with `evCharging`.
+
+```json
+{
+  "custom": [
+    {
+      "id": "tesla-drive-oncor-example",
+      "provider": "Tesla",
+      "planName": "Tesla Electric Drive Plan (12 Month) - Oncor",
+      "tdu": "Oncor",
+      "rateType": "Fixed",
+      "termMonths": 12,
+      "energyChargeCentsPerKwh": 9.5,
+      "deliveryFixedDollars": 4.23,
+      "deliveryChargeCentsPerKwh": 5.6183,
+      "evCharging": {
+        "monthlyFeeDollarsPerVehicle": 15,
+        "eligiblePeriods": [
+          {
+            "label": "Eligible Tesla vehicle charging",
+            "start": "00:00",
+            "end": "12:00",
+            "days": "all"
+          }
+        ],
+        "assumedMonthlyKwh": 300,
+        "requiredDevice": "Tesla EV"
+      }
+    }
+  ]
+}
+```
+
+The scorer subtracts only `eligibleKwh` from the separate EV charging profile. It does not discount unrelated household usage inside the same clock window.

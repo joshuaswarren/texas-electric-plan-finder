@@ -1,6 +1,7 @@
 import type {
   CandidatePlan,
   CustomEflPlan,
+  EvChargingProfile,
   EvaluatedPlan,
   MonthlyUsage,
   PowerToChoosePlan,
@@ -30,13 +31,36 @@ function periodMatches(interval: UsageInterval, period: TouPeriod): boolean {
   return interval.startMinutes >= start || interval.startMinutes < end
 }
 
-function calculateEflMonthlyCost(plan: CustomEflPlan, month: MonthlyUsage): number {
+function eligibleEvKwhForMonth(plan: CustomEflPlan, month: MonthlyUsage, evProfile?: EvChargingProfile): number {
+  if (!plan.evCharging || !evProfile) return 0
+
+  const evMonth = evProfile.monthly.find((candidate) => candidate.month === month.month)
+  if (!evMonth) return 0
+
+  return Math.min(month.kwh, Math.max(0, evMonth.eligibleKwh))
+}
+
+function calculateEflMonthlyCost(
+  plan: CustomEflPlan,
+  month: MonthlyUsage,
+  evProfile?: EvChargingProfile,
+): { cost: number; eligibleEvKwh: number } {
+  const eligibleEvKwh = eligibleEvKwhForMonth(plan, month, evProfile)
+  const billableKwh = plan.evCharging ? Math.max(0, month.kwh - eligibleEvKwh) : month.kwh
+  const evMonthlyFee =
+    plan.evCharging && evProfile
+      ? plan.evCharging.monthlyFeeDollarsPerVehicle * Math.max(1, evProfile.vehicleCount)
+      : 0
+
   const base =
     (plan.baseChargeDollars ?? 0) +
     (plan.deliveryFixedDollars ?? 0) +
-    centsToDollars(plan.deliveryChargeCentsPerKwh ?? 0, month.kwh)
+    evMonthlyFee +
+    centsToDollars(plan.deliveryChargeCentsPerKwh ?? 0, billableKwh)
 
-  const energy = plan.touPeriods?.length
+  const energy = plan.evCharging
+    ? centsToDollars(plan.energyChargeCentsPerKwh ?? 0, billableKwh)
+    : plan.touPeriods?.length
     ? month.intervals.reduce((total, interval) => {
         const period = plan.touPeriods?.find((candidate) => periodMatches(interval, candidate))
         const cents = period?.energyChargeCentsPerKwh ?? plan.energyChargeCentsPerKwh ?? 0
@@ -48,7 +72,10 @@ function calculateEflMonthlyCost(plan: CustomEflPlan, month: MonthlyUsage): numb
     .filter((credit) => month.kwh >= credit.thresholdKwh)
     .reduce((total, credit) => total + credit.amountDollars, 0)
 
-  return Math.max(0, base + energy - credits)
+  return {
+    cost: Math.max(0, base + energy - credits),
+    eligibleEvKwh,
+  }
 }
 
 function ptcCurveCost(plan: PowerToChoosePlan, kwh: number): number {
@@ -117,20 +144,38 @@ export function mapCustomPlans(plans: CustomEflPlan[]): CandidatePlan[] {
   }))
 }
 
-export function evaluatePlan(plan: CandidatePlan, monthlyUsage: MonthlyUsage[]): EvaluatedPlan {
-  const monthlyCosts = monthlyUsage.map((month) => ({
-    month: month.month,
-    kwh: month.kwh,
-    cost:
-      plan.source === 'efl'
-        ? calculateEflMonthlyCost(plan.raw, month)
-        : plan.eflPlan
-          ? calculateEflMonthlyCost(plan.eflPlan, month)
-        : ptcCurveCost(plan.raw, month.kwh),
-  }))
+export function evaluatePlan(
+  plan: CandidatePlan,
+  monthlyUsage: MonthlyUsage[],
+  evProfile?: EvChargingProfile,
+): EvaluatedPlan {
+  const monthlyCosts = monthlyUsage.map((month) => {
+    if (plan.source === 'efl') {
+      return {
+        month: month.month,
+        kwh: month.kwh,
+        ...calculateEflMonthlyCost(plan.raw, month, evProfile),
+      }
+    }
+    if (plan.eflPlan) {
+      return {
+        month: month.month,
+        kwh: month.kwh,
+        ...calculateEflMonthlyCost(plan.eflPlan, month, evProfile),
+      }
+    }
+
+    return {
+      month: month.month,
+      kwh: month.kwh,
+      cost: ptcCurveCost(plan.raw, month.kwh),
+      eligibleEvKwh: 0,
+    }
+  })
   const annualCost = monthlyCosts.reduce((total, month) => total + month.cost, 0)
   const totalKwh = monthlyCosts.reduce((total, month) => total + month.kwh, 0)
   const warnings: string[] = []
+  const eflPlan = plan.source === 'efl' ? plan.raw : plan.eflPlan
 
   if (plan.source === 'ptc') {
     if (plan.eflPlan) {
@@ -151,6 +196,16 @@ export function evaluatePlan(plan: CandidatePlan, monthlyUsage: MonthlyUsage[]):
 
   if (plan.timeOfUse && plan.source === 'ptc') {
     warnings.push('TOU intervals require EFL rules for exact scoring.')
+  }
+  if (eflPlan?.evCharging) {
+    if (evProfile) {
+      warnings.push(
+        `EV plan scored with ${evProfile.eligibleKwh.toFixed(1)} eligible EV kWh from ${evProfile.source}. Non-EV household usage inside the charging window is not discounted.`,
+      )
+      warnings.push(...evProfile.notes)
+    } else {
+      warnings.push('EV plan requires separate Tesla charging kWh. Without EV data, no vehicle-charging discount was applied.')
+    }
   }
 
   return {

@@ -11,6 +11,8 @@ Keywords: Texas electricity plan calculator, PowerToChoose comparison, Smart Met
 - Scores plans against the latest complete calendar months of actual usage, up to 12 months.
 - Filters by contract term, fixed-rate preference, prepaid plans, and time-of-use plans.
 - Pulls EFL links from PowerToChoose and applies parsed EFL charges when the provider document is machine-readable.
+- Supports Tesla EV charging plans by modeling vehicle charging kWh separately from whole-home interval usage.
+- Imports manual EV charging CSVs, can estimate likely EV load from interval shape, and includes a Cloudflare Worker path for Tesla Fleet API OAuth.
 - Supports optional custom EFL JSON for current plans or provider documents that cannot be parsed automatically.
 - Keeps private usage data local in the browser unless you choose to save files yourself.
 
@@ -43,6 +45,27 @@ Deploy the public proxy after changes with:
 npm run deploy:worker
 ```
 
+## Tesla EV Charging Data
+
+Tesla Drive-style EFLs are not ordinary time-of-use plans. The calculator only discounts identified eligible vehicle charging kWh, not all household usage during the eligible hours.
+
+Supported EV data paths:
+
+- Enter an annual Tesla charging assumption and apply it across the scored complete months.
+- Import a manual EV CSV with either `month,kwh,eligible_kwh` rows or session rows containing a charging start time and kWh.
+- Pull Tesla Wall Connector charge history through the Cloudflare Worker after Tesla OAuth is configured.
+- Use the interval estimator as a fallback when charger data is unavailable; estimated rows are flagged as less certain.
+
+Configure Tesla OAuth on the Worker with:
+
+```sh
+wrangler secret put TESLA_CLIENT_ID --config worker/wrangler.jsonc
+wrangler secret put TESLA_CLIENT_SECRET --config worker/wrangler.jsonc
+wrangler secret put TESLA_COOKIE_SECRET --config worker/wrangler.jsonc
+```
+
+Set `TESLA_REDIRECT_URI`, `TESLA_APP_RETURN_URL`, and `ALLOWED_ORIGIN` as Worker vars or secrets for the deployed domain. The browser never exchanges Tesla auth codes directly.
+
 ## Download Smart Meter Texas Usage
 
 See [docs/smart-meter-texas-download.md](docs/smart-meter-texas-download.md). Do not publish your own Smart Meter Texas CSV because it can include your ESIID and detailed household usage patterns.
@@ -55,6 +78,7 @@ PowerToChoose publishes 500, 1,000, and 2,000 kWh average rates. The app also fe
 
 - Provider EFL PDFs and HTML pages are not standardized; unparseable EFLs fall back to a piecewise PowerToChoose average-price curve and are flagged.
 - The app does not auto-download Smart Meter Texas data.
+- Tesla account and Wall Connector history require the owner to connect Tesla OAuth; the app also supports manual imports for people who do not want to connect Tesla.
 - EFL parsing is conservative and format-dependent; always verify the linked EFL before enrolling.
 - Local taxes, non-recurring fees, and provider-specific edge cases must be checked against the EFL and Terms of Service.
 
