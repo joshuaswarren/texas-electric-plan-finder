@@ -655,6 +655,12 @@ function App() {
                         EFL
                       </a>
                     )}
+                    {plan.source === 'ptc' && plan.signUpUrl && (
+                      <a href={plan.signUpUrl} target="_blank" rel="noreferrer">
+                        <LinkIcon size={14} />
+                        Sign up
+                      </a>
+                    )}
                   </td>
                   <td>{plan.termMonths ? `${plan.termMonths} mo` : '-'}</td>
                   <td>{money(plan.annualCost)}</td>
