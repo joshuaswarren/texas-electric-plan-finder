@@ -13,6 +13,7 @@ import {
   Zap,
 } from 'lucide-react'
 import { useMemo, useState } from 'react'
+import { flushSync } from 'react-dom'
 import './App.css'
 import { parseSmartMeterTexasCsv } from './lib/csv'
 import { hydratePlansWithEfl } from './lib/eflParser'
@@ -24,7 +25,7 @@ import {
 } from './lib/evCharging'
 import { evaluatePlan, mapCustomPlans, mapPowerToChoosePlans, parsePlanImport } from './lib/plans'
 import { summarizeUsage } from './lib/usage'
-import type { CustomEflPlan, EvaluatedPlan, EvChargingProfile, PowerToChoosePlan, UsageInterval } from './lib/types'
+import type { CustomEflPlan, EvaluatedPlan, EvChargingProfile, PowerToChoosePlan, UsageSummary } from './lib/types'
 
 type Filters = {
   minTerm: number
@@ -94,7 +95,7 @@ function apiBase(): string {
 }
 
 function App() {
-  const [usageIntervals, setUsageIntervals] = useState<UsageInterval[]>([])
+  const [usage, setUsage] = useState<UsageSummary>()
   const [ptcPlans, setPtcPlans] = useState<PowerToChoosePlan[]>([])
   const [customPlans, setCustomPlans] = useState<CustomEflPlan[]>([])
   const [evProfile, setEvProfile] = useState<EvChargingProfile>()
@@ -109,11 +110,6 @@ function App() {
   const [isFetchingTesla, setIsFetchingTesla] = useState(false)
   const [eflProgress, setEflProgress] = useState<{ done: number; total: number }>()
 
-  const usage = useMemo(
-    () => (usageIntervals.length ? summarizeUsage(usageIntervals) : undefined),
-    [usageIntervals],
-  )
-
   const evaluatedPlans = useMemo(() => {
     if (!usage) return []
     return [...mapCustomPlans(customPlans), ...mapPowerToChoosePlans(ptcPlans)]
@@ -127,11 +123,15 @@ function App() {
 
   async function loadUsageFile(file: File) {
     setError('')
+    setStatus(`Reading ${file.name}...`)
     try {
       const text = await file.text()
       const intervals = parseSmartMeterTexasCsv(text)
       const summary = summarizeUsage(intervals)
-      setUsageIntervals(intervals)
+      if (summary.monthCount === 0) {
+        throw new Error('The uploaded usage CSV did not contain any complete calendar months to score.')
+      }
+      flushSync(() => setUsage(summary))
       setStatus(
         `Loaded ${intervals.length.toLocaleString()} interval rows from ${file.name}; scoring ${summary.monthCount} complete month(s).`,
       )
@@ -337,6 +337,7 @@ function App() {
                 onChange={(event) => {
                   const file = event.target.files?.[0]
                   if (file) void loadUsageFile(file)
+                  event.currentTarget.value = ''
                 }}
               />
             </label>
@@ -377,6 +378,7 @@ function App() {
                 onChange={(event) => {
                   const file = event.target.files?.[0]
                   if (file) void loadPlanFile(file)
+                  event.currentTarget.value = ''
                 }}
               />
             </label>
@@ -431,6 +433,7 @@ function App() {
                 onChange={(event) => {
                   const file = event.target.files?.[0]
                   if (file) void loadEvChargingFile(file)
+                  event.currentTarget.value = ''
                 }}
               />
             </label>

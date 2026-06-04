@@ -1,11 +1,5 @@
 import type { UsageInterval } from './types'
 
-const dateFormatter = new Intl.DateTimeFormat('en-CA', {
-  year: 'numeric',
-  month: '2-digit',
-  day: '2-digit',
-})
-
 function parseCsvRows(input: string): string[][] {
   const rows: string[][] = []
   let row: string[] = []
@@ -69,6 +63,10 @@ function parseDate(date: string, time: string): Date {
   return new Date(year, month - 1, day, hour, minute)
 }
 
+function formatDate(year: number, month: number, day: number): string {
+  return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`
+}
+
 function minutes(time: string): number {
   const [hour, minute] = time.split(':').map(Number)
   return hour * 60 + minute
@@ -97,8 +95,9 @@ export function parseSmartMeterTexasCsv(input: string): UsageInterval[] {
   return rows.slice(1).map((row) => {
     const date = clean(row[index.USAGE_DATE])
     const start = clean(row[index.USAGE_START_TIME])
+    const [monthNumber, dayNumber, yearNumber] = date.split('/').map(Number)
     const parsedDate = parseDate(date, start)
-    const formattedDate = dateFormatter.format(parsedDate)
+    const formattedDate = formatDate(yearNumber, monthNumber, dayNumber)
     const month = formattedDate.slice(0, 7)
     const kwh = Number(clean(row[index.USAGE_KWH]))
 
