@@ -100,6 +100,11 @@ function parseTduChargeFromKnownColumnTable(text: string, aliases: string[]): { 
     {
       names: ['centerpoint', 'oncor', 'aep north', 'aep central', 'tnmp', 'lubbock'],
       pattern:
+        /TDU\s+Name:?\s+Monthly\s+Base\s+Charge:?\s+Consumption\s+Charge:?(?:\s+Updated:?)?\s+Centerpoint\s+Oncor\s+AEP\s+North\s+AEP\s+Central\s+TNMP\s+(?:LP(?:&|&amp;)?L|Lubbock)\s+\$?\s*(\d+(?:\.\d{1,2})?)\s+\$?\s*(\d+(?:\.\d{1,2})?)\s+\$?\s*(\d+(?:\.\d{1,2})?)\s+\$?\s*(\d+(?:\.\d{1,2})?)\s+\$?\s*(\d+(?:\.\d{1,2})?)\s+\$?\s*(\d+(?:\.\d{1,2})?)\s+\$?\s*(0?\.\d{4,6})\/kwh\s+\$?\s*(0?\.\d{4,6})\/kwh\s+\$?\s*(0?\.\d{4,6})\/kwh\s+\$?\s*(0?\.\d{4,6})\/kwh\s+\$?\s*(0?\.\d{4,6})\/kwh\s+\$?\s*(0?\.\d{4,6})\/kwh/i,
+    },
+    {
+      names: ['centerpoint', 'oncor', 'aep north', 'aep central', 'tnmp', 'lubbock'],
+      pattern:
         /Center\s*point\s+Oncor\s+AEP\s+North\s+AEP\s+Central\s+TNMP\s+(?:LP(?:&|&amp;)?L|Lubbock).*?\$?\s*(\d+(?:\.\d{1,2})?)\s+\$?\s*(\d+(?:\.\d{1,2})?)\s+\$?\s*(\d+(?:\.\d{1,2})?)\s+\$?\s*(\d+(?:\.\d{1,2})?)\s+\$?\s*(\d+(?:\.\d{1,2})?)\s+\$?\s*(\d+(?:\.\d{1,2})?).*?\$?\s*(0?\.\d{4,6})\/kwh\s+\$?\s*(0?\.\d{4,6})\/kwh\s+\$?\s*(0?\.\d{4,6})\/kwh\s+\$?\s*(0?\.\d{4,6})\/kwh\s+\$?\s*(0?\.\d{4,6})\/kwh\s+\$?\s*(0?\.\d{4,6})\/kwh/i,
     },
     {
@@ -139,10 +144,35 @@ function parseTduChargesFromText(tduName: string | undefined, text: string): { f
 
   for (const alias of aliases) {
     const escaped = alias.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    const strictTableRowPatterns = [
+      new RegExp(
+        `(?:^|\\s)${escaped}\\s+\\$\\s*(\\d+(?:\\.\\d{1,2})?)\\s+\\$\\s*(0?\\.\\d{4,6})\\s*\\/\\s*kwh`,
+        'i',
+      ),
+      new RegExp(
+        `(?:^|\\s)${escaped}\\s+\\$\\s*(\\d+(?:\\.\\d{1,2})?)\\s+(0?\\.\\d{4,6})\\s*\\/\\s*kwh`,
+        'i',
+      ),
+    ]
+
+    for (const pattern of strictTableRowPatterns) {
+      const match = normalized.match(pattern)
+      if (!match) continue
+
+      const fixed = Number(match[1])
+      const rate = Number(match[2])
+      if (Number.isFinite(fixed) && Number.isFinite(rate)) {
+        return {
+          fixedDollars: fixed,
+          centsPerKwh: dollarsPerKwhToCents(rate),
+        }
+      }
+    }
+
     const rowPatterns = [
-      new RegExp(`${escaped}.{0,80}?\\$\\s*(\\d+(?:\\.\\d{1,2})?).{0,80}?(\\d+(?:\\.\\d{1,6})?)\\s*cents?(?:\\s*(?:per|\\/)\\s*kwh)?`, 'i'),
-      new RegExp(`${escaped}.{0,80}?\\$\\s*(\\d+(?:\\.\\d{1,2})?).{0,80}?\\$\\s*(0?\\.\\d{4,6})\\s*(?:per|\\/)\\s*kwh`, 'i'),
-      new RegExp(`${escaped}.{0,80}?\\$\\s*(\\d+(?:\\.\\d{1,2})?)\\s+\\$\\s*(0?\\.\\d{4,6})\\s*(?:per|\\/)\\s*kwh`, 'i'),
+      new RegExp(`${escaped}(?!\\s+monthly\\s+charge|\\s+delivery\\s+charge).{0,80}?\\$\\s*(\\d+(?:\\.\\d{1,2})?).{0,80}?(\\d+(?:\\.\\d{1,6})?)\\s*cents?(?:\\s*(?:per|\\/)\\s*kwh)?`, 'i'),
+      new RegExp(`${escaped}(?!\\s+monthly\\s+charge|\\s+delivery\\s+charge).{0,80}?\\$\\s*(\\d+(?:\\.\\d{1,2})?).{0,80}?\\$\\s*(0?\\.\\d{4,6})\\s*(?:per|\\/)\\s*kwh`, 'i'),
+      new RegExp(`${escaped}(?!\\s+monthly\\s+charge|\\s+delivery\\s+charge).{0,80}?\\$\\s*(\\d+(?:\\.\\d{1,2})?)\\s+\\$\\s*(0?\\.\\d{4,6})\\s*(?:per|\\/)\\s*kwh`, 'i'),
     ]
 
     for (const pattern of rowPatterns) {
@@ -421,12 +451,9 @@ function parseEflText(plan: PowerToChoosePlan, text: string): { plan?: CustomEfl
       /(?:tdu|tdsp|delivery|distribution|oncor\s+delivery|centerpoint\s+delivery|aep\s+(?:north|central)?\s*delivery|tnmp\s+delivery|transmission\s+and\s+distribution).{0,160}?\$(\d+(?:\.\d{1,6})?)\s*(?:per|\/)\s*kwh/i,
     ],
   )
-  const fallbackTduCharges =
-    directDeliveryFixedDollars === undefined || directDeliveryChargeCentsPerKwh === undefined
-      ? parseTduChargesFromText(plan.company_tdu_name, normalized)
-      : undefined
-  const deliveryFixedDollars = directDeliveryFixedDollars ?? fallbackTduCharges?.fixedDollars
-  const deliveryChargeCentsPerKwh = directDeliveryChargeCentsPerKwh ?? fallbackTduCharges?.centsPerKwh
+  const tduSpecificCharges = parseTduChargesFromText(plan.company_tdu_name, normalized)
+  const deliveryFixedDollars = tduSpecificCharges?.fixedDollars ?? directDeliveryFixedDollars
+  const deliveryChargeCentsPerKwh = tduSpecificCharges?.centsPerKwh ?? directDeliveryChargeCentsPerKwh
   const touPeriods = extractTouPeriods(normalized)
   const evCharging = extractEligibleVehicleChargingPlan(normalized)
   const effectiveEnergyChargeCentsPerKwh =
@@ -572,20 +599,26 @@ export async function fetchAndParseEfl(plan: PowerToChoosePlan): Promise<PowerTo
       throw new Error(`EFL fetch returned HTTP ${response.status}.`)
     }
     const text = await extractResponseText(response)
-    let parsed = parseEflText(plan, text)
-    if (!parsed.plan && parsed.notes.some((note) => note.startsWith('TDU '))) {
-      const externalTdu = await fetchExternalTduText(text)
-      if (externalTdu.text) {
-        const reparsed = parseEflText(plan, `${text}\n${externalTdu.text}`)
+    const externalTdu = await fetchExternalTduText(text)
+    let parsed = externalTdu.text ? parseEflText(plan, `${externalTdu.text}\n${text}`) : parseEflText(plan, text)
+    if (!parsed.plan && parsed.notes.some((note) => note.startsWith('TDU ')) && !externalTdu.text) {
+      const fallbackExternalTdu = await fetchExternalTduText(text)
+      if (fallbackExternalTdu.text) {
+        const reparsed = parseEflText(plan, `${fallbackExternalTdu.text}\n${text}`)
         parsed = {
           ...reparsed,
-          notes: [...externalTdu.notes, ...reparsed.notes],
+          notes: [...fallbackExternalTdu.notes, ...reparsed.notes],
         }
-      } else if (externalTdu.notes.length) {
+      } else if (fallbackExternalTdu.notes.length) {
         parsed = {
           ...parsed,
-          notes: [...externalTdu.notes, ...parsed.notes],
+          notes: [...fallbackExternalTdu.notes, ...parsed.notes],
         }
+      }
+    } else if (externalTdu.notes.length) {
+      parsed = {
+        ...parsed,
+        notes: [...externalTdu.notes, ...parsed.notes],
       }
     }
     if (!parsed.plan) {
